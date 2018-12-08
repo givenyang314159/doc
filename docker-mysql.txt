@@ -1,0 +1,101 @@
+1. 下载mysql 的镜像：
+docker pull registry.docker-cn.com/library/mysql:5.7
+
+2. 运行mysql :
+docker run --name mysql -e MYSQL_ROOT_PASSWORD=123456 -p 3306:3306 -d 【imagid】
+
+3. 使用bash 命令进入mysql
+[root@localhost ~]# docker exec -it [容器id]  /bin/bash  
+root@eb3dbfb0958f:/# mysql -uroot -p
+Enter password: 
+4. 进入mysql 后创建用户：
+	CREATE USER 'mysql'@'%' IDENTIFIED BY '123456'
+
+	GRANT ALL ON *.* TO 'mysql'@'%'
+
+5. 查看mysql 启动配置文件docker exec -it mysql bash
+[root@hadoop1 mysql]# docker exec -it 132169fb96c9 /bin/bash
+root@132169fb96c9:/# cat /etc/mysql/mysql.conf.d/mysqld.cnf
+# Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+
+#
+# The MySQL  Server configuration file.
+#
+# For explanations see
+# http://dev.mysql.com/doc/mysql/en/server-system-variables.html
+
+[mysqld]
+pid-file        = /var/run/mysqld/mysqld.pid
+socket          = /var/run/mysqld/mysqld.sock
+datadir         = /var/lib/mysql
+#log-error      = /var/log/mysql/error.log
+# By default we only accept connections from localhost
+#bind-address   = 127.0.0.1
+# Disabling symbolic-links is recommended to prevent assorted security risks
+symbolic-links=0
+root@132169fb96c9:/# 
+
+ 6.重新启动mysql 映射配置文件：
+创建本地配置文件目录，和数据存放目录
+mkdir -p /usr/local/mysql/
+mkdir -p /usr/local/mysql/data
+
+根据配置文件启动本地docker上的数据库。
+ docker run -d -p 3306:3306 -v /usr/local/mysql/my.cnf:/etc/mysql/mysql.conf.d/mysqld.cnf -v /usr/local/mysql/data:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=123456 --name mysql 563a026a1511
+
+
+7. 乱码解决：
+
+1、Spring Boot项目是否全部用UTF-8 
+通过输出可知，Spring Boot 已经默认为UTF-8
+
+2、链接数据库是否指定了编码 
+以下是配置文件
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/myweb?useUnicode=true&amp;characterEncoding=UTF-81234
+
+通过配置文件可知，没有问题
+
+3、MySQL建库，建表是否制定了编码 
+为了解决这个问题，我用了2个数据了工具DataGrip和Navicat，得出的结论是，也没有问题
+
+4、那是什么问题呢？ 
+通过大量搜索，通过
+
+ show variables like '%char%';
+ OR
+ show variables like 'character%';123
+
+
+msyql 的启动文件中添加这几个：
+
+[mysqld]
+
+character-set-server=utf8
+
+
+[client]
+
+default-character-set=utf8
+
+
+[mysql]
+
+default-character-set=utf8
+ 

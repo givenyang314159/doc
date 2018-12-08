@@ -1,0 +1,159 @@
+1、centos 7 系统（网络桥接）+docker环境
+2、centos 7 基本命令支持 
+
+yum install wegt  ##安装下载工具
+yum install net-tools  ##安装网络工具
+yum install tree  ##安装tree命令（方便查看集群配置文件结构）
+yum -y update ##跟新系统
+
+二 安装集群环境
+docker pull ruby
+2 安装redis镜像  
+
+docker pull redis:5.0
+备注：redis官方集群方案 为5.0版本自带
+
+
+三、集群配置
+
+1 创建虚拟网卡
+
+docker create network redis-net
+docker network ls ##查看网卡信息
+
+
+备注：创建redis-net虚拟网卡 目的是让docker容器能与宿主（centos7）桥接网络 并间接与外界连接
+
+2 查看redis-net虚拟网卡网关ip
+
+ docker network inspect  redis-net  | grep "Gateway" |  grep --color=auto -P '(\d{1,3}.){3}\d{1,3}' -o
+
+备注：docker network inspect network-name 显示 network-name对应配置信息         （gerp 过滤网关配置行 并筛选ip ） 可人工   
+
+3 创建配置文件模版
+
+mkdir /home/redis-cluster ##在home 目录下创建 集群配置文件加
+cd /home/redis-cluster    ##在创建目录中
+touch redis-cluster.tmpl  ##创建模版件
+vi redis-cluster.tmpl ##编辑模版文件
+备注：编辑如下  esc+：wq退出
+
+port ${PORT}                        ##节点端口
+cluster-enabled yes                 ##cluster集群模式
+cluster-config-file nodes.conf      ##集群配置名
+cluster-node-timeout 5000           ##超时时间  
+cluster-announce-ip 172.18.0.1      ##实际为各节点网卡分配ip  先用上网关ip代替
+cluster-announce-port ${PORT}       ##节点映射端口
+cluster-announce-bus-port 1${PORT}  ##节点总线端
+appendonly yes                      ##持久化模式
+备注：此模版文件为集群节点通用文件  其中${PORT} 将读取命令行变量  ip则根据网卡分配ip进行替换  以保证节点配置文件除端口以及ip 全部一致。
+
+4 创建节点配置文件
+
+cd /home/redis-cluster
+for port in `seq 7010 7015`; do \
+  mkdir -p ./${port}/conf \
+  && PORT=${port} envsubst < ./redis-cluster.tmpl > ./${port}/conf/redis.conf \
+  && mkdir -p ./${port}/data; \
+done
+备注：命令译为 循环7010 - 7015 在当前目录下创建 701*/conf 目录结构     （mkdir -p 递归创建目录）
+          设置701*为PORT变量 将当前目录下 模版文件 复制到 701*/conf/redis.conf 文件中
+          在当前目录下创建 701*/data 目录结构 
+
+5 验证上步
+
+tree
+cat 701*/conf/redis.conf
+
+
+ 备注:data目录本步骤为空   节点对应配置文件ip本步骤对应网管ip
+
+6 启动redis节点容器
+registry.docker-cn.com/library/redis           5.0                 415381a6cb81        2 weeks ago         94.9MB
+for port in `seq 7010 7015`; do \
+  docker run -d -ti -p ${port}:${port} -p 1${port}:1${port} \
+  --privileged=true -v /home/redis-cluster/${port}/conf/redis.conf:/usr/local/etc/redis/redis.conf \
+  --privileged=true -v /home/redis-cluster/${port}/data:/data \
+  --restart always --name redis-${port} --net redis-net \
+  --sysctl net.core.somaxconn=1024 415381a6cb81 redis-server /usr/local/etc/redis/redis.conf; \
+done
+
+redis 为容器的ID
+备注：命令译为  循环7010 - 7015  运行redis 容器
+
+docker  run            运行
+-d                          守护进程模式
+--restart always     保持容器启动
+--name redis-710* 容器起名
+--net redis-net    容器使用虚拟网卡
+-p                        指定宿主机器与容器端口映射 701*:701*
+-P                        指定宿主机与容器redis总线端口映射 1701*:1701*
+ --privileged=true -v /home/redis-cluster/701*/conf/redis.conf:/usr/local/etc/redis/redis.conf
+    付权将宿主701*节点文件挂载到容器/usr/local/etc/redis/redis.conf 文件中
+--privileged=true -v /home/redis-cluster/${port}/data:/data \
+   付权将宿主701*/data目录挂载到容器/data目录中
+--sysctl net.core.somaxconn=1024 redis redis-server /usr/local/etc/redis/redis.conf;
+   容器根据挂载的配置文件启动 redis服务端
+
+7 验证容器启动
+
+docker ps
+
+
+8 查看容器分配ip
+
+docker network inspect redis-net
+结果
+
+
+
+备注：每个容器对应分配了ip 需要修改节点配置文件redis.conf与其对应  并重启容器。
+
+9 修改节点 配置文件重启redis服务（容器中命令中度缺失不推荐） 可以不做
+
+docker exec -it redis-701* /bin/bash   ##以命令行形式进入 redis-701*容器   
+vi /usr/local/etc/redis/redis.conf   ##编辑ip为上查询分配的ip 并esc+：wq退出
+
+
+备注：6个节点均要修改 并重新启动redis-service 根据修改的节点文件
+
+10 修改宿主挂载目录文件中文件 重复6、7 进行11
+
+vi  /home/redis-cluster/701*/conf/redis.conf  ##编辑ip为查询分配的ip 并esc+：wq退出
+
+
+暂停容器并删除容器 以便重复6步骤
+
+for port in `seq 7010 7015`; do \
+  docker stop redis-${port};
+  docker rm redis-${port};
+done
+备注：6个都要修改redis.conf   
+
+11. 创建集群：
+a.登录容器中某一台redis    dockr exec -it redis-7010 bash
+b.创建集群
+redis-cli --cluster create 172.20.0.2:7010 172.20.0.3:7011 172.20.0.4:7012 172.20.0.5:7013 172.20.0.6:7014 172.20.0.7:7015 --cluster-replicas 1
+c. 查看集群的节点信息：
+
+
+c.连接redis
+redis-cli -h 172.20.0.5 -c -p 7013
+
+
+安装完成，后续操作 (创建的集群还在，只需要启动各自的节点)
+d.关闭redis
+
+for port in `seq 7010 7015`; do \
+  docker stop redis-${port};
+done
+
+启动redis 容器
+for port in `seq 7010 7015`; do \
+  docker start redis-${port};
+done
+
+2.登录其中一台
+docker exec -it redis-7010 bash 
+连接：redis-cli -h 172.20.0.5 -c -p 7013
+3. 针对虚拟机做了端口映射：在外访问，192.168.1.200:7013 

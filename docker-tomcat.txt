@@ -1,0 +1,30 @@
+1. 拉取镜像：docker pull registry.docker-cn.com/library/tomcat:8.5.35
+
+2. 创建tomcat容器
+docker run --name mytomcat -p 8088:8080 -d 【imageid】
+
+3. 进入容器内部查看webapps 目录
+交互式的进入tomcat容器。“docker exec”命令表示在运行中的容器中开启一个新的进程。
+[root@hadoop1 webapps]# docker exec -it mytomcat /bin/bash
+root@29755b08c36f:/usr/local/tomcat# ls
+退出容器 ： exit 
+
+4. 新建宿主机目录上的webapp目录做映射用
+mkdir -p /home/tomcat/
+docker cp 29755b08c36f:/usr/local/tomcat/webapss /home/tomcat
+
+5. 删除步骤1-2 创建的 mytomcat 容器
+docker stop mytomcat
+docker start mytomcat
+
+6. 重建容器
+docker run --privileged=true -v /home/tomcat/webapps:/usr/local/tomcat/webapps --name mytomcat -p 8090:8080 -d 6759d91a032b
+
+7. 部署war包
+打好的jar 包放到宿主机的 /home/tomcat/webapps 目录下，重启tomcat即可 （springboot打成war包 详见打包方式）
+
+8.启动容器
+访问宿主机
+
+
+

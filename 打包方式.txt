@@ -1,0 +1,39 @@
+打包成war运行
+pom.的修改：
+1. 添加mvn 打包插件
+
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-maven-plugin</artifactId>
+        </plugin>
+    </plugins>
+    <finalName>hello</finalName>
+</build>
+
+
+2. 添加打包成war包名称用于访问
+<finalName>hello</finalName>
+
+
+3. 添加使用外部tomcat依赖
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-tomcat</artifactId>
+</dependency>
+
+4. 添加war 包的启动类:
+SpringBoot启动类同级目录添加类 继承 SpringBootServletInitializer，重写方法 configure。参数为Springboot启动类
+
+@Override
+protected SpringApplicationBuilder configure(SpringApplicationBuilder builder) {
+    return builder.sources(AppStart.class);
+}
+
+5. 打成war包
+
+
+打包成jar：
+直接使用java -jar xxx.jar 运行
